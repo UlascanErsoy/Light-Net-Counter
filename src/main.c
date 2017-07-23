@@ -295,8 +295,9 @@ int start(){
 			/**ASCII 35 -> "#"**/
 			if(ch==35){
 				
-				fgets(date_str , 8 , f_report);
 				d_offset = ftell(f_report);
+				fgets(date_str , 8 , f_report);
+
 
 			}//End of if
 
@@ -526,15 +527,33 @@ void _ntoa(const struct ether_header* mac , char* dest , char* src){
 
 int _usrsave(){
 
-	FILE* f = fopen(Configuration.file_dir , "w+");
+	FILE* f = fopen(Configuration.file_dir , "rb+");
 
-	fseek(f , d_offset , SEEK_SET);//Go to our date
-
+	fseek(f , 0 , SEEK_END);
+	unsigned long int f_size = ftell(f);
+	fseek(f , 0 , SEEK_SET);
+	char* str = calloc(sizeof(char) , f_size);
+	fread(str , d_offset , 1 , f);
+	fclose(f);
+	
+	f = fopen(Configuration.file_dir , "wb+");
+	/**Write the old stuff**/	
+	fwrite(str , strlen(str) , 1 , f);
 	updateDate();
-	fprintf(f , "#%s\n" ,curDate);
+	fwrite("#" , 1 , 1 , f);
+	fwrite(curDate , strlen(curDate) , 1 , f);
+	fwrite("\n" , 1 , 1 , f);
+
+	for(int i = 0 ; i < usr_size ; i++){
+		
+		char* temp = calloc(sizeof(char) , 256);
+		sprintf(temp ,"%s %s %llu %llu\n" ,user_list[i].ALIAS , user_list[i].MAC , user_list[i].Download , user_list[i].Upload);
+		fwrite(temp , strlen(temp) , 1 , f);
+		
+
+	}
 	
-	for(int i = 0 ; i < usr_size ; i++)fprintf(f , "%s %s %llu %llu\n" , user_list[i].ALIAS , user_list[i].MAC , user_list[i].Download , user_list[i].Upload);
-	
+
 	fclose(f);
 return 0;
 }//end of usr save
