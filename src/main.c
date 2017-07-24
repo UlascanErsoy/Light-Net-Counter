@@ -312,6 +312,8 @@ int start(){
 		
 
 	}//End of if
+
+	if(data_found == 0)d_offset = -1;
 	
 	/**Load the data WIP**/
 	while(data_found == 1){
@@ -531,6 +533,7 @@ int _usrsave(){
 
 	fseek(f , 0 , SEEK_END);
 	unsigned long int f_size = ftell(f);
+	if(d_offset == -1)d_offset = f_size;
 	fseek(f , 0 , SEEK_SET);
 	char* str = calloc(sizeof(char) , f_size);
 	fread(str , d_offset , 1 , f);
