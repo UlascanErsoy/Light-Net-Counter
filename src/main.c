@@ -38,7 +38,7 @@
 #define DIR_CONFIG ".lnc-config" 
 #define ABOUT_TXT  "2017 Ulascan Ersoy , Light Weight Network Tracker"
 #define HELP_TXT " -configure $DEVICENAME $FILEDIR \n -add $MACADDR $Limit \n -list \n -remove $index \n -start \n -about \n -version"
-#define VERSION    "V0.0.1"
+#define VERSION    "V0.0.2"
 #define COMMAND(a)(strcmp(argv[1] , a) == 0)
 #define isEqual(a , b)(strcmp(a , b) == 0 )
 
@@ -58,6 +58,8 @@ long int d_offset = 0; //Offset of our data in the file
 /**PROTOTYPES**/
 int _configure(char* device , char* dir);
 int start();
+int dayChange();//1 if yes , 0 if not
+int _reset();
 void updateDate();
 void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , const u_char *packet_body);
 void _ntoa(const struct ether_header* mac , char* dest , char* src);
@@ -80,7 +82,7 @@ struct List{
 	unsigned long long int Upload;
 	unsigned long long int Download;
 	unsigned long long int limit;
-
+	char BANNED;//1 if yes
 }*user_list;
 /**FUNCTIONS RELATED TO LIST**/
 int _usradd(char* ALIAS , char* MAC , char* limit , char list_add);//Adds to list | limit = 0 means no limit
@@ -107,7 +109,7 @@ void lnc_init(){
 int main(int args , char** argv){
 	
 	lnc_init();
-	
+		
 	
 	//Check if there are enough arguments
 	if(args < 2){
@@ -190,9 +192,7 @@ int _configure(char* device , char* dir){
 
 	}
 
-	fprintf(f , "DeviceName%c%s\n" , 61 ,device);
-	updateDate();
-	fprintf(f , "LastReset%c%s\n"  , 61 ,curDate);	
+	fprintf(f , "DeviceName%c%s\n" , 61 ,device);	
 	fprintf(f , "FileDir%c%s\n"    , 61 ,dir);
 	
 	
@@ -233,11 +233,6 @@ int start(){
 			Configuration.device_name = var;
 
 			printf("%s is set to '%s'\n" , flag , Configuration.device_name);
-
-		}else if(strcmp(flag , "LastReset") == 0){
-			
-			Configuration.last_reset = var;		
-			printf("%s is set to %s \n" , flag , Configuration.last_reset);
 
 		}else if(strcmp(flag , "FileDir") == 0){
 
@@ -312,24 +307,33 @@ int start(){
 		
 
 	}//End of if
-
-	if(data_found == 0)d_offset = -1;
 	
+	/**Update our Calendar**/
+	strcpy(Configuration.last_reset ,curDate);
+
+	if(data_found == 0){
+		
+		d_offset = -1;
+		_reset();
+
+	}//End of if
 	/**Load the data WIP**/
 	while(data_found == 1){
 		
 		char *_name= calloc(sizeof(char) ,128),
 		     *_mac = calloc(sizeof(char) , 17);
 		unsigned long long int download , upload;
-		int _ind;
+		int _ind , ban;
+		
 
-		if(EOF==fscanf(f_report , "%s %s %llu %llu" , _name , _mac , &download , &upload))break;
+		if(EOF==fscanf(f_report , "%s %s %llu %llu %d" , _name , _mac , &download , &upload ,&ban ))break;
 		
 		
 		if((_ind = _usrLookupMAC(_mac)) != -1){
 			
 			user_list[_ind].Download = download;
 			user_list[_ind].Upload   = upload;
+			user_list[_ind].BANNED   = ban;
 
 		}
 	
@@ -420,6 +424,13 @@ void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , con
 		user_list[_temp].Upload+=data;
 
 	}
+		if(user_list[_temp].BANNED == 0 && user_list[_temp].limit != 0 && user_list[_temp].limit < user_list[_temp].Upload + user_list[_temp].Download){
+			/**BAN HAMMER IS HERE**/
+			char* str = calloc(sizeof(char) , 256);
+			sprintf(str , "iptables -I INPUT -m mac --mac-source %s -j DROP" , user_list[_temp].MAC);
+			system(str);	
+			user_list[_temp].BANNED = 1;
+		}//End of if
 
 	}//End of if
 	
@@ -459,6 +470,7 @@ int _usradd(char* ALIAS , char* MAC , char* limit , char list_add){
 	user_list[usr_size-1].limit = _limit;
 	user_list[usr_size-1].Download = 0;
 	user_list[usr_size-1].Upload   = 0;
+	user_list[usr_size-1].BANNED   = 0;
 	/**Add to the file**/
 	if(list_add == 1){
 		FILE* f = fopen(DIR_CONFIG , "a");
@@ -502,18 +514,19 @@ int _usrLookupMAC(char* MAC){
 
 	for(int i = 0 ;  i < usr_size ; i++)if(isEqual(user_list[i].MAC , MAC))return i;
 
-	return -1;
-
+return -1;
 }//End of Lookup MAC
 
 int _usrlist(){
-
-	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%lld Up:%lld Limit:%lld\n",i, 
+		
+	printf("#%d/%d/%d|%d:%d:%d\n", tm.tm_year + 1900, tm.tm_mon+1 ,tm.tm_mday , tm.tm_hour , tm.tm_min , tm.tm_sec);
+	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%lld Up:%lld Limit:%lld %s \n",i, 
 									      user_list[i].ALIAS,
 									      user_list[i].MAC,
 									      user_list[i].Download,
 									      user_list[i].Upload,
-									      user_list[i].limit);
+									      user_list[i].limit,
+									      user_list[i].BANNED==1?"BANNED":"FINE");
 
 }//End of list
 
@@ -533,30 +546,63 @@ int _usrsave(){
 
 	fseek(f , 0 , SEEK_END);
 	unsigned long int f_size = ftell(f);
-	if(d_offset == -1)d_offset = f_size;
+	if(d_offset == -1)d_offset = f_size;	/**If we couldn't find the records of today**/
+	if(dayChange() == 1){
+
+		d_offset = f_size;  /**or we switch days in the middle of the operation we update our calendars!*/
+		_reset();
+	}
+	
 	fseek(f , 0 , SEEK_SET);
 	char* str = calloc(sizeof(char) , f_size);
-	fread(str , d_offset , 1 , f);
+	fread(str , d_offset-1 , 1 , f);
 	fclose(f);
 	
 	f = fopen(Configuration.file_dir , "wb+");
 	/**Write the old stuff**/	
 	fwrite(str , strlen(str) , 1 , f);
 	updateDate();
-	fwrite("#" , 1 , 1 , f);
+	fwrite("\n#" , 1 , 2 , f);
 	fwrite(curDate , strlen(curDate) , 1 , f);
 	fwrite("\n" , 1 , 1 , f);
 
 	for(int i = 0 ; i < usr_size ; i++){
 		
 		char* temp = calloc(sizeof(char) , 256);
-		sprintf(temp ,"%s %s %llu %llu\n" ,user_list[i].ALIAS , user_list[i].MAC , user_list[i].Download , user_list[i].Upload);
+		sprintf(temp ,"%s %s %llu %llu %d\n" ,user_list[i].ALIAS , user_list[i].MAC , user_list[i].Download , user_list[i].Upload , user_list[i].BANNED);
 		fwrite(temp , strlen(temp) , 1 , f);
-		
 
 	}
 	
-
 	fclose(f);
 return 0;
 }//end of usr save
+
+int dayChange(){
+	
+	updateDate();
+	if(isEqual(Configuration.last_reset , curDate))return 0; 
+	
+return 1;
+}//End of day Change
+
+int _reset(){
+
+	char* str = calloc(sizeof(char) , 256);
+
+	for(int i = 0; i < usr_size ; i++){
+
+
+		sprintf(str , "iptables -D INPUT -m mac --mac-source %s -j DROP" , user_list[i].MAC);
+		system(str);	
+		user_list[i].Download = 0;
+		user_list[i].Upload = 0;
+		user_list[i].BANNED = 0;
+	}	
+	updateDate();
+	strcpy(Configuration.last_reset,curDate);
+return 0;
+}//End of reset
+
+
+
