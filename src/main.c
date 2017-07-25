@@ -459,7 +459,7 @@ int _usradd(char* ALIAS , char* MAC , char* limit , char list_add){
 
 	}
 	
-	unsigned long long int _limit = atoi(limit);
+	unsigned long long int _limit = strtoll(limit , NULL , 10);
 	/**Add and allocate**/
 	usr_size++;
 	user_list = realloc(user_list , (sizeof(unsigned long long int) + 132) * usr_size+1);	
@@ -520,7 +520,7 @@ return -1;
 int _usrlist(){
 		
 	printf("#%d/%d/%d|%d:%d:%d\n", tm.tm_year + 1900, tm.tm_mon+1 ,tm.tm_mday , tm.tm_hour , tm.tm_min , tm.tm_sec);
-	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%lld Up:%lld Limit:%lld %s \n",i, 
+	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%llu Up:%llu Limit:%llu %s \n",i, 
 									      user_list[i].ALIAS,
 									      user_list[i].MAC,
 									      user_list[i].Download,
