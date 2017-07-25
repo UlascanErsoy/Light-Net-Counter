@@ -13,7 +13,7 @@
   *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
   *_______________________________________________________________________
   *##COMMANDS##
-  * -configure $"DEVICENAME"
+  * -configure $"DEVICENAME" $REPORT_PATH
   * -add $MACADDR $LIMIT
   * -remove $index
   * -list 
