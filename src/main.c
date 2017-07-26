@@ -28,8 +28,9 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <stdint.h>
+#include "bmppp.h"
+#include <stdio.h>
 #include <math.h>
 #include <pcap.h>
 #include <time.h>
@@ -65,13 +66,16 @@ void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , con
 void _ntoa(const struct ether_header* mac , char* dest , char* src);
 char* input(FILE* f);
 
+/**Configuration Related**/
 struct {
 	char* device_name;
 	char* last_reset;
 	char* file_dir;
+	char* img_dir;
 	unsigned long long int session_total;
 	
 }Configuration;
+int readConfig();
 
 unsigned int usr_size = 0;
 struct List{
@@ -90,6 +94,9 @@ int _usrremove(char* index);//Removes from the list
 int _usrLookupMAC(char* MAC);//Argument in dotted notation! Looks for the given MAC address , if found returns the index if not returns -1
 int _usrlist();//List 
 int _usrsave();//Save to the report file
+
+/**Graph Generation Related**/
+
 
 void lnc_init(){
 	
@@ -204,59 +211,7 @@ return 0;
 
 int start(){
 	
-	FILE* f_config = fopen(DIR_CONFIG , "r+");
-
-	if(!f_config){
-		
-		puts("Config File not found! use -configure");
-		return -1;
-
-	}
-	
-	/**Load the config**/
-	int k = 0;
-	while(k == 0){
-		
-		char* line = calloc(sizeof(char) , 128);
-		char* flag = calloc(sizeof(char) , 64);
-		char* var  = calloc(sizeof(char) , 64);
-		
-		if(fscanf(f_config , "%s" , line) == EOF)break;	
-		
-		for(int i = 0 ; i < strlen(line) ; i++)if(line[i] == 61)line[i]=32;
-		
-		sscanf(line , "%s %s" , flag , var);
-
-		if(strcmp(flag , "DeviceName") == 0){
-
-			Configuration.device_name = calloc(sizeof(char) , strlen(var));
-			Configuration.device_name = var;
-
-			printf("%s is set to '%s'\n" , flag , Configuration.device_name);
-
-		}else if(strcmp(flag , "FileDir") == 0){
-
-			Configuration.file_dir = var;
-			printf("%s is set to '%s'\n" , flag ,Configuration.file_dir);
-
-		}else if(strcmp(flag , "Track") == 0){
-			
-			char *MAC  = calloc(sizeof(char) , 17 ),
-			     *limit= calloc(sizeof(char) , 64 );
-			
-			fscanf(f_config , "%s%s" , MAC , limit);
-			_usradd(var , MAC , limit , 0);		
-			printf("Track[%d]: %s %s %s\n" , usr_size-1 , var , MAC , limit);
-							
-		}else{
-
-			printf("%s is an unknown option! Ignoring.\n" , flag);
-
-		}//End of Command matching
-
-	}//end of while
-	
-	fclose(f_config);
+	readConfig();
 
 	/**Check if the config is valid**/
 	
@@ -604,5 +559,67 @@ int _reset(){
 return 0;
 }//End of reset
 
+int readConfig(){
+
+	FILE* f_config = fopen(DIR_CONFIG , "r+");
+
+	if(!f_config){
+		
+		puts("Config File not found! use -configure");
+		return -1;
+
+	}
+	
+	/**Load the config**/
+	int k = 0;
+	while(k == 0){
+		
+		char* line = calloc(sizeof(char) , 128);
+		char* flag = calloc(sizeof(char) , 64);
+		char* var  = calloc(sizeof(char) , 64);
+		
+		if(fscanf(f_config , "%s" , line) == EOF)break;	
+		
+		for(int i = 0 ; i < strlen(line) ; i++)if(line[i] == 61)line[i]=32;
+		
+		sscanf(line , "%s %s" , flag , var);
+
+		if(strcmp(flag , "DeviceName") == 0){
+
+			Configuration.device_name = calloc(sizeof(char) , strlen(var));
+			Configuration.device_name = var;
+
+			printf("%s is set to '%s'\n" , flag , Configuration.device_name);
+
+		}else if(strcmp(flag , "FileDir") == 0){
+
+			Configuration.file_dir = var;
+			printf("%s is set to '%s'\n" , flag ,Configuration.file_dir);
+
+		}else if(strcmp(flag , "Track") == 0){
+			
+			char *MAC  = calloc(sizeof(char) , 17 ),
+			     *limit= calloc(sizeof(char) , 64 );
+			
+			fscanf(f_config , "%s%s" , MAC , limit);
+			_usradd(var , MAC , limit , 0);		
+			printf("Track[%d]: %s %s %s\n" , usr_size-1 , var , MAC , limit);
+							
+		}else if(strcmp(flag , "ImgDir") == 0){
+			
+			Configuration.img_dir = calloc(sizeof(char) , strlen(var));
+			Configuration.img_dir = var;
+
+		}else{
+
+			printf("%s is an unknown option! Ignoring.\n" , flag);
+
+		}//End of Command matching
+
+	}//end of while
+	
+	fclose(f_config);
+
+}//End of readConfig
 
 
