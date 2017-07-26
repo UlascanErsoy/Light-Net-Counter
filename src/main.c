@@ -441,7 +441,7 @@ int _usrsave(){
 	
 	fseek(f , 0 , SEEK_SET);
 	char* str = calloc(sizeof(char) , f_size);
-	fread(str , d_offset-1 , 1 , f);
+	fread(str , d_offset-2 , 1 , f);
 	fclose(f);
 	
 	f = fopen(Configuration.file_dir , "wb+");
