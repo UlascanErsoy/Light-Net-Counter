@@ -8,7 +8,7 @@ lnc: main.o bmppp.o
 main.o:
 	$(CC) main.c -c -o $@ 
 bmppp.o:
-	$(CC) bmppp.c -c -o $@
+	$(CC) bmppp.c -o $@ -c
 deploy: lnc
 	scp $(BIN_DIR)/lnc root@192.168.0.1:
 clean:
