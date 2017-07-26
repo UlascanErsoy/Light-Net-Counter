@@ -94,6 +94,7 @@ int _usrremove(char* index);//Removes from the list
 int _usrLookupMAC(char* MAC);//Argument in dotted notation! Looks for the given MAC address , if found returns the index if not returns -1
 int _usrlist();//List 
 int _usrsave();//Save to the report file
+int _usrload();//Load from the file
 
 /**Graph Generation Related**/
 
@@ -117,7 +118,6 @@ int main(int args , char** argv){
 	
 	lnc_init();
 		
-	
 	//Check if there are enough arguments
 	if(args < 2){
 		
@@ -165,7 +165,6 @@ int main(int args , char** argv){
 
 	}	
 	
-
 
 }//End of main
 
@@ -221,82 +220,14 @@ int start(){
 	char error_buf[PCAP_ERRBUF_SIZE];
 	
 	return_code = pcap_lookupnet(Configuration.device_name , &ip_raw , &submask_raw , error_buf);
-	
-	char data_found = 0;
 
 	if(return_code == -1){
 		
 		printf("%s\n" , error_buf);
 		return -1;
 	}
-
-	FILE* f_report = fopen(Configuration.file_dir , "r+");
-	if(!f_report){
-		
-		fprintf(stderr , "Report file not found! '%s' Creating a new one!\n" , Configuration.file_dir);
-		f_report = fopen(Configuration.file_dir , "w+");
-			
-	}else{
-		/**Load todays data**/
-      		char ch , *date_str  = calloc(sizeof(char) , 8);
-
-		while(EOF!=(ch=fgetc(f_report))){
-		
-			/**ASCII 35 -> "#"**/
-			if(ch==35){
-				
-				d_offset = ftell(f_report);
-				fgets(date_str , 8 , f_report);
-
-
-			}//End of if
-
-			updateDate();
-			if(isEqual(date_str , curDate)){
-						
-				data_found = 1;
-				break;
-			}
-
-		}
-		
-
-	}//End of if
-	
-	/**Update our Calendar**/
-	strcpy(Configuration.last_reset ,curDate);
-
-	if(data_found == 0){
-		
-		d_offset = -1;
-		_reset();
-
-	}//End of if
-	/**Load the data WIP**/
-	while(data_found == 1){
-		
-		char *_name= calloc(sizeof(char) ,128),
-		     *_mac = calloc(sizeof(char) , 17);
-		unsigned long long int download , upload;
-		int _ind , ban;
-		
-
-		if(EOF==fscanf(f_report , "%s %s %llu %llu %d" , _name , _mac , &download , &upload ,&ban ))break;
-		
-		
-		if((_ind = _usrLookupMAC(_mac)) != -1){
-			
-			user_list[_ind].Download = download;
-			user_list[_ind].Upload   = upload;
-			user_list[_ind].BANNED   = ban;
-
-		}
-	
-	}//End of loading
-
+	_usrload();
 	_usrlist();
-			
-
 
 	/**START TRACKING**/
 
@@ -622,4 +553,70 @@ int readConfig(){
 
 }//End of readConfig
 
+int _usrload(){
 
+	char data_found = 0;
+	FILE* f_report = fopen(Configuration.file_dir , "r+");
+	if(!f_report){
+		
+		fprintf(stderr , "Report file not found! '%s' Creating a new one!\n" , Configuration.file_dir);
+		f_report = fopen(Configuration.file_dir , "w+");
+					
+	}else{
+		/**Load todays data**/
+      		char ch , *date_str  = calloc(sizeof(char) , 8);
+
+		while(EOF!=(ch=fgetc(f_report))){
+		
+			/**ASCII 35 -> "#"**/
+			if(ch==35){
+				
+				d_offset = ftell(f_report);
+				fgets(date_str , 8 , f_report);
+
+			}//End of if
+
+			updateDate();
+			if(isEqual(date_str , curDate)){
+						
+				data_found = 1;
+				break;
+			}
+
+		}
+		
+	}//End of if
+	
+	/**Update our Calendar**/
+	strcpy(Configuration.last_reset ,curDate);
+
+	if(data_found == 0){
+		
+		d_offset = -1;
+		_reset();
+
+	}//End of if
+	/**Load the data WIP**/
+	while(data_found == 1){
+		
+		char *_name= calloc(sizeof(char) ,128),
+		     *_mac = calloc(sizeof(char) , 17);
+		unsigned long long int download , upload;
+		int _ind , ban;
+		
+
+		if(EOF==fscanf(f_report , "%s %s %llu %llu %d" , _name , _mac , &download , &upload ,&ban ))break;
+		
+		
+		if((_ind = _usrLookupMAC(_mac)) != -1){
+			
+			user_list[_ind].Download = download;
+			user_list[_ind].Upload   = upload;
+			user_list[_ind].BANNED   = ban;
+
+		}
+	
+	}//End of loading
+
+return 0;
+}//End of _usrload
