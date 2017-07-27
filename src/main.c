@@ -14,7 +14,7 @@
   *_______________________________________________________________________
   *##COMMANDS##
   * -configure $"DEVICENAME" $REPORT_PATH
-  * -add $MACADDR $LIMIT
+  * -add $ALIAS $MACADDR $LIMIT
   * -remove $index
   * -list 
   * -start
@@ -65,6 +65,8 @@ void updateDate();
 void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , const u_char *packet_body);
 void _ntoa(const struct ether_header* mac , char* dest , char* src);
 char* input(FILE* f);
+char* convertReadable(unsigned long long int bytes);
+char* convertBytes(char* readable);
 
 /**Configuration Related**/
 struct {
@@ -345,7 +347,8 @@ int _usradd(char* ALIAS , char* MAC , char* limit , char list_add){
 
 	}
 	
-	unsigned long long int _limit = strtoll(limit , NULL , 10);
+	unsigned long long int _limit = strtol(convertBytes(limit) , NULL , 10);
+	
 	/**Add and allocate**/
 	usr_size++;
 	user_list = realloc(user_list , (sizeof(unsigned long long int) + 132) * usr_size+1);	
@@ -406,12 +409,12 @@ return -1;
 int _usrlist(){
 		
 	printf("#%d/%d/%d|%d:%d:%d\n", tm.tm_year + 1900, tm.tm_mon+1 ,tm.tm_mday , tm.tm_hour , tm.tm_min , tm.tm_sec);
-	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%llu Up:%llu Limit:%llu %s \n",i, 
+	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%s Up:%s Limit:%s %s \n",i, 
 									      user_list[i].ALIAS,
 									      user_list[i].MAC,
-									      user_list[i].Download,
-									      user_list[i].Upload,
-									      user_list[i].limit,
+									      convertReadable(user_list[i].Download),
+									      convertReadable(user_list[i].Upload),
+									      convertReadable(user_list[i].limit),
 									      user_list[i].BANNED==1?"BANNED":"FINE");
 
 }//End of list
@@ -620,3 +623,57 @@ int _usrload(){
 
 return 0;
 }//End of _usrload
+
+char* convertReadable(unsigned long long int bytes){
+
+	char* result = calloc(sizeof(char) , 16);
+	unsigned long long int _temp = bytes;
+	int count;
+	
+	
+	for(count = 0; _temp > 1; ++count)_temp /=1024;
+	--count;
+	
+	switch(count){
+
+		case 0:
+			sprintf(result , "%.2lf B" , ((double)bytes) /pow(1024 , count));
+			break;
+		case 1:
+			sprintf(result , "%.2lf KB" , ((double)bytes) /pow(1024 , count));
+			break;
+		case 2:
+			sprintf(result , "%.2lf MB" , ((double)bytes) /pow(1024 , count));
+			break;
+		case 3:
+			sprintf(result , "%.2lf GB" , ((double)bytes) /pow(1024 , count));
+			break;
+		case 4:
+			sprintf(result , "%.2lf TB" , ((double)bytes) /pow(1024 , count));
+			break;
+
+	}
+	
+return result;
+}//End of convert to readable
+char* convertBytes(char* readable){
+	
+	char* result = calloc(sizeof(char) , 21);
+	/**Acceptable Formats T,G,M,K,B**/
+	int length = strlen(readable) , mult;
+	
+	switch(readable[length-1]){
+
+		case 'B': mult = 0;break;
+		case 'K': mult = 1;break;
+		case 'M': mult = 2;break;
+		case 'G': mult = 3;break;
+		case 'T': mult = 4;break;
+		default : mult = 0;break;
+
+	}//End of switch
+	readable[length] = 0;
+	sprintf(result , "%lf" , strtol(readable , NULL , 10) * pow(1024 , mult));
+
+return result;
+};
