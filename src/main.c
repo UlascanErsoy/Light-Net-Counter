@@ -21,6 +21,8 @@
   * -help 
   * -about    
   * -version
+  * -graph
+  * -webreport
   **/
 
 /** INCLUDE **/
@@ -38,14 +40,28 @@
 /**GLOBALS**/
 #define DIR_CONFIG ".lnc-config" 
 #define ABOUT_TXT  "2017 Ulascan Ersoy , Light Weight Network Tracker"
-#define HELP_TXT " -configure $DEVICENAME $FILEDIR \n -add $MACADDR $Limit \n -list \n -remove $index \n -start \n -about \n -version"
+#define HELP_TXT " -configure $DEVICENAME $FILEDIR $GRAPHDIR $WEBDIR\n -add $ALIAS $MACADDR $Limit \n -list \n -remove $index \n -start \n -about \n -version"
 #define VERSION    "V0.0.2"
 #define COMMAND(a)(strcmp(argv[1] , a) == 0)
 #define isEqual(a , b)(strcmp(a , b) == 0 )
 
+#define W 500
+#define H 500
+#define BR 255
+#define BG 255
+#define BB 255
+#define BLUE 0,0,255
+#define GREEN 0,255,0
+#define RED 255,0,0
+#define YELLOW 255,255,0
+#define PURPLE 255,0,255
+#define CYAN 0,255,255
+#define GRAY 120,120,120
+#define ORANGE 255,80,80
+
 unsigned int time_out   = 0;
 unsigned int packet_lim = 0;
-unsigned int min_diff = 0 , sec_diff = 5 , hour_diff = 0;
+unsigned int min_diff = 0 , sec_diff = 30 , hour_diff = 0;
 
 /**Time and date related stuff**/
 time_t t;
@@ -57,10 +73,11 @@ char* curDate;
 long int d_offset = 0; //Offset of our data in the file
 
 /**PROTOTYPES**/
-int _configure(char* device , char* dir);
+int _configure(char* device , char* dir , char* graph_dir , char* web_dir);
 int start();
 int dayChange();//1 if yes , 0 if not
 int _reset();
+int drawGraph();
 void updateDate();
 void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , const u_char *packet_body);
 void _ntoa(const struct ether_header* mac , char* dest , char* src);
@@ -74,6 +91,7 @@ struct {
 	char* last_reset;
 	char* file_dir;
 	char* img_dir;
+	char* web_dir;
 	unsigned long long int session_total;
 	
 }Configuration;
@@ -99,10 +117,17 @@ int _usrsave();//Save to the report file
 int _usrload();//Load from the file
 
 /**Graph Generation Related**/
+int convertCoords(int x , int y){return x + y * W;}
+double AngleToRad(double angle);
+void drawAngleLine(int center_x , int center_y , int radius , double angle , int R , int G , int B , pixel* p);
+void setColour(int R , int G , int B , pixel p);
 
+int webreport();
 
 void lnc_init(){
 	
+	srand(time(NULL));	
+
 	Configuration.session_total = 0;
 	Configuration.last_reset = calloc(sizeof(char) , 11);
 	t = time(NULL);
@@ -112,7 +137,6 @@ void lnc_init(){
 	user_list = calloc(1 , sizeof(struct List));
 	
 	begin_time = *localtime(&t);
-
 
 }//End of lnc_init
 
@@ -144,7 +168,7 @@ int main(int args , char** argv){
 
 	}else if(COMMAND("-configure")){
 		
-		return _configure(argv[2] , argv[3]);
+		return _configure(argv[2] , argv[3] , argv[4] , argv[5]);
 
 	}else if(COMMAND("-start")){
 		
@@ -160,6 +184,14 @@ int main(int args , char** argv){
 		}
 		else return _usradd(argv[2] , argv[3] , argv[4] , 1);
 
+	}else if(COMMAND("-graph")){
+		
+		return drawGraph();
+
+	}else if(COMMAND("-webreport")){
+		
+		return webreport();
+
 	}else{
 
 		puts("Not a command! Try -help.");
@@ -171,7 +203,7 @@ int main(int args , char** argv){
 }//End of main
 
 /** -1 failed , 0 success **/
-int _configure(char* device , char* dir){
+int _configure(char* device , char* dir , char* graph_dir , char* web_dir){
 
 	FILE* f = fopen(DIR_CONFIG , "w+");
 
@@ -202,8 +234,8 @@ int _configure(char* device , char* dir){
 
 	fprintf(f , "DeviceName%c%s\n" , 61 ,device);	
 	fprintf(f , "FileDir%c%s\n"    , 61 ,dir);
-	
-	
+	fprintf(f , "ImgDir%c%s\n"     , 61 ,graph_dir);
+	fprintf(f , "WebDir%c%s\n"     , 61 ,web_dir);
 	fclose(f);
 
 puts("Configuration Complete!");
@@ -530,6 +562,12 @@ int readConfig(){
 			Configuration.file_dir = var;
 			printf("%s is set to '%s'\n" , flag ,Configuration.file_dir);
 
+		}else if(strcmp(flag , "ImgDir") == 0){
+			
+			Configuration.img_dir = calloc(sizeof(char) , strlen(var));
+			Configuration.img_dir = var;
+			printf("%s is set to '%s'\n" , flag , Configuration.img_dir);
+		
 		}else if(strcmp(flag , "Track") == 0){
 			
 			char *MAC  = calloc(sizeof(char) , 17 ),
@@ -537,13 +575,15 @@ int readConfig(){
 			
 			fscanf(f_config , "%s%s" , MAC , limit);
 			_usradd(var , MAC , limit , 0);		
+	
 			printf("Track[%d]: %s %s %s\n" , usr_size-1 , var , MAC , limit);
-							
-		}else if(strcmp(flag , "ImgDir") == 0){
+	
+		}else if(strcmp(flag , "WebDir") == 0){
 			
-			Configuration.img_dir = calloc(sizeof(char) , strlen(var));
-			Configuration.img_dir = var;
-
+			Configuration.web_dir = calloc(sizeof(char) , strlen(var));
+			Configuration.web_dir = var;
+			printf("%s is set to '%s'\n" , flag , Configuration.web_dir);
+	
 		}else{
 
 			printf("%s is an unknown option! Ignoring.\n" , flag);
@@ -677,3 +717,124 @@ char* convertBytes(char* readable){
 
 return result;
 };
+
+/** GRAPHING RELATED PART**/
+
+//Only graph the first 8
+
+int drawGraph(){
+	
+	/**INIT**/
+	if(!Configuration.img_dir)readConfig();
+	if(usr_size == 0)_usrload();
+
+	pixel* graph = calloc(sizeof(pixel) , W * H);
+	
+	int center_x = 250 , center_y = 250 , radius = 210;
+	double rand_angle = rand() % 36;
+	for(int i = 0 ; i < W ; i++){
+
+		for(int j = 0 ; j < H ; j++){
+			
+			if(sqrt((i-center_x) * (i-center_x) + (j-center_y) * (j-center_y)) >= radius - 1 && sqrt((i-center_x) * (i-center_x) + (j-center_y) * (j-center_y)) <= radius + 1){
+
+				graph[convertCoords(i , j)].R = 255;
+				graph[convertCoords(i , j)].G = 80;
+				graph[convertCoords(i , j)].B = 80;
+
+			}else{
+				
+				graph[convertCoords(i , j)].R = 20;
+				graph[convertCoords(i , j)].G = 20;
+				graph[convertCoords(i , j)].B = 20;
+
+			}//End of if
+		}	
+
+	}//End of perimeter
+
+
+	FILE* f = fopen(Configuration.img_dir , "w+");
+	
+	if(!f){
+		
+		puts("Couldn't open the file!");
+		
+		return -1;
+
+	}
+	
+	writeBMP(f , W , H , graph);
+
+	fclose(f);
+
+return 0;
+}//End of drawgraph
+
+void drawAngleLine(int center_x , int center_y , int radius , double angle , int R , int G , int B , pixel* p){
+
+	double x = center_x + cos(AngleToRad(angle)) * radius,
+	       y = center_y + sin(AngleToRad(angle)) * radius;
+		
+	double m = (y - center_y) / (x - center_x);
+	
+	
+
+
+}//End of drawAngleLine
+
+double AngleToRad(double angle){
+
+	return ((angle)/180.0) * 3.1415;
+
+}
+
+void setColour(int R , int G , int B , pixel p){
+
+	p.R = R;
+	p.G = G;
+	p.B = B;
+
+}
+
+int webreport(){
+	
+	readConfig();
+	_usrload();
+
+	FILE* f = fopen(Configuration.web_dir , "w+");
+
+	if(!f){
+		
+		puts("Could not open the file");
+		return -1;
+
+	}//End of if
+
+	fprintf(f , "<html>\n <head>\n<title>Report</title>\n<style>\ntable {\nfont-family: arial, sans-serif;\nborder-collapse: collapse;\nwidth: 100%%;\n}\ntd , th {\nborder: 1px solid #dddddd;\ntext-align: left;\npadding: 8px;\n}\ntr:nth-child(even){\nbackground-color: #dddddd\n}\n</style>\n</head>");
+	fprintf(f , "<body>\n<table>\n<tr>\n<th>ALIAS</th>\n<th>MAC</th>\n<th>Download</th>\n<th>Upload</th>\n<th>Limit</th>\n<th>Status</th>\n</tr>");
+	for(int i = 0 ; i < usr_size ; i++){
+		
+	fprintf(f , "\n<tr>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td></tr>" , user_list[i].ALIAS , user_list[i].MAC , user_list[i].Download==0?"0B":convertReadable(user_list[i].Download) , user_list[i].Upload==0?"0B":convertReadable(user_list[i].Upload) , user_list[i].limit==0?"No Limit!":convertReadable(user_list[i].limit) , user_list[i].BANNED==1?"BANNED":"FINE");
+
+
+	}//End of for
+/**	
+	drawGraph();
+	
+	char* local_dir = calloc(sizeof(char) , strlen(Configuration.img_dir));
+	for(int i = strlen(local_dir) ; 0 < i ; i++)if(local_dir[i] == '/'){
+		
+		local_dir = &local_dir[i+1];
+		break;
+
+	}
+	fprintf(f , "<img src=""%s"" alt""Graph"" style=""width:500px;height:500px;"">" , local_dir);
+
+	fprintf(f , "</table>\n</body>\n</html>");
+**/
+	fclose(f);
+
+return 0;
+
+}//End of webreport
