@@ -31,37 +31,22 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include "bmppp.h"
 #include <stdio.h>
 #include <math.h>
 #include <pcap.h>
 #include <time.h>
 
 /**GLOBALS**/
-#define DIR_CONFIG ".lnc-config" 
+#define DIR_CONFIG "/.lnc-config" 
 #define ABOUT_TXT  "2017 Ulascan Ersoy , Light Weight Network Tracker"
 #define HELP_TXT " -configure $DEVICENAME $FILEDIR $GRAPHDIR $WEBDIR\n -add $ALIAS $MACADDR $Limit \n -list \n -remove $index \n -start \n -about \n -version"
 #define VERSION    "V0.0.2"
 #define COMMAND(a)(strcmp(argv[1] , a) == 0)
 #define isEqual(a , b)(strcmp(a , b) == 0 )
 
-#define W 500
-#define H 500
-#define BR 255
-#define BG 255
-#define BB 255
-#define BLUE 0,0,255
-#define GREEN 0,255,0
-#define RED 255,0,0
-#define YELLOW 255,255,0
-#define PURPLE 255,0,255
-#define CYAN 0,255,255
-#define GRAY 120,120,120
-#define ORANGE 255,80,80
-
 unsigned int time_out   = 0;
 unsigned int packet_lim = 0;
-unsigned int min_diff = 0 , sec_diff = 30 , hour_diff = 0;
+unsigned int min_diff = 0 , sec_diff = 5 ,hour_diff = 0;
 
 /**Time and date related stuff**/
 time_t t;
@@ -77,7 +62,7 @@ int _configure(char* device , char* dir , char* graph_dir , char* web_dir);
 int start();
 int dayChange();//1 if yes , 0 if not
 int _reset();
-int drawGraph();
+
 void updateDate();
 void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , const u_char *packet_body);
 void _ntoa(const struct ether_header* mac , char* dest , char* src);
@@ -116,13 +101,7 @@ int _usrlist();//List
 int _usrsave();//Save to the report file
 int _usrload();//Load from the file
 
-/**Graph Generation Related**/
-int convertCoords(int x , int y){return x + y * W;}
-double AngleToRad(double angle);
-void drawAngleLine(int center_x , int center_y , int radius , double angle , int R , int G , int B , pixel* p);
-void setColour(int R , int G , int B , pixel p);
-
-int webreport();
+int webreport(int command);
 
 void lnc_init(){
 	
@@ -184,13 +163,9 @@ int main(int args , char** argv){
 		}
 		else return _usradd(argv[2] , argv[3] , argv[4] , 1);
 
-	}else if(COMMAND("-graph")){
-		
-		return drawGraph();
-
 	}else if(COMMAND("-webreport")){
 		
-		return webreport();
+		return webreport(1);
 
 	}else{
 
@@ -262,13 +237,14 @@ int start(){
 	}
 	_usrload();
 	_usrlist();
-
+	
 	/**START TRACKING**/
 
 	/**Open Device for live capturing**/
 
 	struct pcap_pkthdr packet_header;
 	pcap_t *handle;
+//	pcap_set_buffer_size(handle, 64 * 1024 * 1024);
 	handle = pcap_open_live(Configuration.device_name , BUFSIZ , packet_lim , time_out , error_buf);
 	/**Check if the packet is Valid**/
 	if(handle == NULL){
@@ -279,8 +255,6 @@ int start(){
 
 	/**Handle packets**/
 	pcap_loop(handle , 0 , packet_handler , NULL);
-
-
 
 return 0;
 }//End of start
@@ -318,8 +292,8 @@ return realloc(str , sizeof(char) * size);
 void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , const u_char *packet_body){
 	 
 	int data = 0 , _temp = 0;
-	Configuration.session_total+= (data=packet_header->len);
-//	printf("Total : %d\n" , Configuration.session_total);
+//	Configuration.session_total+= (data=packet_header->len);
+//	printf("Total : %llu\n" , Configuration.session_total);
 	
 	struct ether_header *eth;
 
@@ -328,13 +302,12 @@ void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , con
 	char  srcMac[18];
 
 	_ntoa(eth , destMac , srcMac);
-	
-	
+		
 	//Don't bother if the tracking list is empty just update the total
 	if(usr_size != 0){
-
+	printf("%s - %s\n", destMac , srcMac);
 	if((_temp = _usrLookupMAC(destMac))!= -1){
-		
+				
 		user_list[_temp].Download+=data;
 
 	}	
@@ -344,13 +317,14 @@ void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , con
 		user_list[_temp].Upload+=data;
 
 	}
+		
 		if(user_list[_temp].BANNED == 0 && user_list[_temp].limit != 0 && user_list[_temp].limit < user_list[_temp].Upload + user_list[_temp].Download){
 			/**BAN HAMMER IS HERE**/
-			char* str = calloc(sizeof(char) , 256);
-			sprintf(str , "iptables -I INPUT -m mac --mac-source %s -j DROP" , user_list[_temp].MAC);
-			system(str);	
-			user_list[_temp].BANNED = 1;
-		}//End of if
+		char* str = calloc(sizeof(char) , 256);
+		sprintf(str , "iptables -I INPUT -m mac --mac-source %s -j DROP" , user_list[_temp].MAC);
+		system(str);	
+		user_list[_temp].BANNED = 1;
+	}//End of if
 
 	}//End of if
 	
@@ -358,11 +332,13 @@ void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , con
 	t = time(NULL);
 	struct tm now = *localtime(&t);
 	 
-	if((now.tm_hour - begin_time.tm_hour >= hour_diff) && (now.tm_min - begin_time.tm_min >= min_diff) && (now.tm_sec - begin_time.tm_sec >= sec_diff)){
+	if((now.tm_sec - begin_time.tm_sec >= sec_diff)){
 		
 		/**Routine here | Saving | Checking for bans | etc**/
 		_usrsave();
 		_usrlist();
+	//	webreport(0);
+		
 	begin_time = now;
 	}//End of routine
 
@@ -441,12 +417,12 @@ return -1;
 int _usrlist(){
 		
 	printf("#%d/%d/%d|%d:%d:%d\n", tm.tm_year + 1900, tm.tm_mon+1 ,tm.tm_mday , tm.tm_hour , tm.tm_min , tm.tm_sec);
-	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%s Up:%s Limit:%s %s \n",i, 
+	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%llu Up:%llu Limit:%llu %s \n",i, 
 									      user_list[i].ALIAS,
 									      user_list[i].MAC,
-									      convertReadable(user_list[i].Download),
-									      convertReadable(user_list[i].Upload),
-									      convertReadable(user_list[i].limit),
+									      user_list[i].Download,
+									      user_list[i].Upload,
+									      user_list[i].limit,
 									      user_list[i].BANNED==1?"BANNED":"FINE");
 
 }//End of list
@@ -467,7 +443,7 @@ int _usrsave(){
 
 	fseek(f , 0 , SEEK_END);
 	unsigned long int f_size = ftell(f);
-	if(d_offset == -1)d_offset = f_size;	/**If we couldn't find the records of today**/
+	if(d_offset == -1)d_offset = f_size + 1;/**If we couldn't find the records of today**/
 	if(dayChange() == 1){
 
 		d_offset = f_size;  /**or we switch days in the middle of the operation we update our calendars!*/
@@ -517,8 +493,8 @@ int _reset(){
 		sprintf(str , "iptables -D INPUT -m mac --mac-source %s -j DROP" , user_list[i].MAC);
 		system(str);	
 		user_list[i].Download = 0;
-		user_list[i].Upload = 0;
-		user_list[i].BANNED = 0;
+		user_list[i].Upload   = 0;
+		user_list[i].BANNED   = 0;
 	}	
 	updateDate();
 	strcpy(Configuration.last_reset,curDate);
@@ -562,12 +538,6 @@ int readConfig(){
 			Configuration.file_dir = var;
 			printf("%s is set to '%s'\n" , flag ,Configuration.file_dir);
 
-		}else if(strcmp(flag , "ImgDir") == 0){
-			
-			Configuration.img_dir = calloc(sizeof(char) , strlen(var));
-			Configuration.img_dir = var;
-			printf("%s is set to '%s'\n" , flag , Configuration.img_dir);
-		
 		}else if(strcmp(flag , "Track") == 0){
 			
 			char *MAC  = calloc(sizeof(char) , 17 ),
@@ -597,7 +567,8 @@ int readConfig(){
 }//End of readConfig
 
 int _usrload(){
-
+	
+	
 	char data_found = 0;
 	FILE* f_report = fopen(Configuration.file_dir , "r+");
 	if(!f_report){
@@ -606,9 +577,13 @@ int _usrload(){
 		f_report = fopen(Configuration.file_dir , "w+");
 					
 	}else{
+		
 		/**Load todays data**/
       		char ch , *date_str  = calloc(sizeof(char) , 8);
-
+		fseek(f_report , 0 , SEEK_END);
+		int i = 0 , f_size = ftell(f_report);
+		fseek(f_report , 0 , SEEK_SET);
+		
 		while(EOF!=(ch=fgetc(f_report))){
 		
 			/**ASCII 35 -> "#"**/
@@ -620,21 +595,23 @@ int _usrload(){
 			}//End of if
 
 			updateDate();
+			
 			if(isEqual(date_str , curDate)){
 						
 				data_found = 1;
 				break;
 			}
 
-		}
-		
+		i++;
+		if(i >= f_size)break;
+		}		
 	}//End of if
 	
 	/**Update our Calendar**/
 	strcpy(Configuration.last_reset ,curDate);
 
 	if(data_found == 0){
-		
+			
 		d_offset = -1;
 		_reset();
 
@@ -669,7 +646,6 @@ char* convertReadable(unsigned long long int bytes){
 	char* result = calloc(sizeof(char) , 16);
 	unsigned long long int _temp = bytes;
 	int count;
-	
 	
 	for(count = 0; _temp > 1; ++count)_temp /=1024;
 	--count;
@@ -718,89 +694,12 @@ char* convertBytes(char* readable){
 return result;
 };
 
-/** GRAPHING RELATED PART**/
-
-//Only graph the first 8
-
-int drawGraph(){
+int webreport(int command){
 	
-	/**INIT**/
-	if(!Configuration.img_dir)readConfig();
-	if(usr_size == 0)_usrload();
-
-	pixel* graph = calloc(sizeof(pixel) , W * H);
-	
-	int center_x = 250 , center_y = 250 , radius = 210;
-	double rand_angle = rand() % 36;
-	for(int i = 0 ; i < W ; i++){
-
-		for(int j = 0 ; j < H ; j++){
-			
-			if(sqrt((i-center_x) * (i-center_x) + (j-center_y) * (j-center_y)) >= radius - 1 && sqrt((i-center_x) * (i-center_x) + (j-center_y) * (j-center_y)) <= radius + 1){
-
-				graph[convertCoords(i , j)].R = 255;
-				graph[convertCoords(i , j)].G = 80;
-				graph[convertCoords(i , j)].B = 80;
-
-			}else{
-				
-				graph[convertCoords(i , j)].R = 20;
-				graph[convertCoords(i , j)].G = 20;
-				graph[convertCoords(i , j)].B = 20;
-
-			}//End of if
-		}	
-
-	}//End of perimeter
-
-
-	FILE* f = fopen(Configuration.img_dir , "w+");
-	
-	if(!f){
-		
-		puts("Couldn't open the file!");
-		
-		return -1;
-
-	}
-	
-	writeBMP(f , W , H , graph);
-
-	fclose(f);
-
-return 0;
-}//End of drawgraph
-
-void drawAngleLine(int center_x , int center_y , int radius , double angle , int R , int G , int B , pixel* p){
-
-	double x = center_x + cos(AngleToRad(angle)) * radius,
-	       y = center_y + sin(AngleToRad(angle)) * radius;
-		
-	double m = (y - center_y) / (x - center_x);
-	
-	
-
-
-}//End of drawAngleLine
-
-double AngleToRad(double angle){
-
-	return ((angle)/180.0) * 3.1415;
-
-}
-
-void setColour(int R , int G , int B , pixel p){
-
-	p.R = R;
-	p.G = G;
-	p.B = B;
-
-}
-
-int webreport(){
-	
-	readConfig();
-	_usrload();
+	if(command == 1){
+		readConfig();
+		_usrload();
+	}//End of if
 
 	FILE* f = fopen(Configuration.web_dir , "w+");
 
@@ -815,24 +714,11 @@ int webreport(){
 	fprintf(f , "<body>\n<table>\n<tr>\n<th>ALIAS</th>\n<th>MAC</th>\n<th>Download</th>\n<th>Upload</th>\n<th>Limit</th>\n<th>Status</th>\n</tr>");
 	for(int i = 0 ; i < usr_size ; i++){
 		
-	fprintf(f , "\n<tr>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td></tr>" , user_list[i].ALIAS , user_list[i].MAC , user_list[i].Download==0?"0B":convertReadable(user_list[i].Download) , user_list[i].Upload==0?"0B":convertReadable(user_list[i].Upload) , user_list[i].limit==0?"No Limit!":convertReadable(user_list[i].limit) , user_list[i].BANNED==1?"BANNED":"FINE");
+	fprintf(f , "\n<tr>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td></tr>" , user_list[i].ALIAS , user_list[i].MAC , user_list[i].Download==0?"0B":convertReadable(user_list[i].Download) , user_list[i].Upload==0?"0B":convertReadable(user_list[i].Upload) , user_list[i].limit==0?"No Limit!":convertReadable(user_list[i].limit) , user_list[i].BANNED==1?"BANNED":"FINE" );
 
 
 	}//End of for
-/**	
-	drawGraph();
-	
-	char* local_dir = calloc(sizeof(char) , strlen(Configuration.img_dir));
-	for(int i = strlen(local_dir) ; 0 < i ; i++)if(local_dir[i] == '/'){
-		
-		local_dir = &local_dir[i+1];
-		break;
-
-	}
-	fprintf(f , "<img src=""%s"" alt""Graph"" style=""width:500px;height:500px;"">" , local_dir);
-
-	fprintf(f , "</table>\n</body>\n</html>");
-**/
+	fprintf(f , "LastUpdated: %s-%d:%d:%d </table></body></html>" , curDate , tm.tm_hour , tm.tm_min , tm.tm_sec);
 	fclose(f);
 
 return 0;
