@@ -60,7 +60,7 @@ long int d_offset = 0; //Offset of our data in the file
 /**PROTOTYPES**/
 int _configure(char* device , char* dir , char* graph_dir , char* web_dir);
 int start();
-int dayChange();//1 if yes , 0 if not
+int dayChange();//1 if yes ,0 if not
 int _reset();
 void updateDate();
 void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , const u_char *packet_body);
