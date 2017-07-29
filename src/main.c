@@ -46,7 +46,7 @@
 
 unsigned int time_out   = 0;
 unsigned int packet_lim = 0;
-unsigned int min_diff = 0 , sec_diff = 5 ,hour_diff = 0;
+unsigned int min_diff = 0 , sec_diff = 45 , hour_diff = 0;
 
 /**Time and date related stuff**/
 time_t t;
@@ -62,7 +62,6 @@ int _configure(char* device , char* dir , char* graph_dir , char* web_dir);
 int start();
 int dayChange();//1 if yes , 0 if not
 int _reset();
-
 void updateDate();
 void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , const u_char *packet_body);
 void _ntoa(const struct ether_header* mac , char* dest , char* src);
@@ -101,7 +100,7 @@ int _usrlist();//List
 int _usrsave();//Save to the report file
 int _usrload();//Load from the file
 
-int webreport(int command);
+int webreport();
 
 void lnc_init(){
 	
@@ -165,7 +164,7 @@ int main(int args , char** argv){
 
 	}else if(COMMAND("-webreport")){
 		
-		return webreport(1);
+		return webreport();
 
 	}else{
 
@@ -237,14 +236,13 @@ int start(){
 	}
 	_usrload();
 	_usrlist();
-	
+
 	/**START TRACKING**/
 
 	/**Open Device for live capturing**/
 
 	struct pcap_pkthdr packet_header;
 	pcap_t *handle;
-//	pcap_set_buffer_size(handle, 64 * 1024 * 1024);
 	handle = pcap_open_live(Configuration.device_name , BUFSIZ , packet_lim , time_out , error_buf);
 	/**Check if the packet is Valid**/
 	if(handle == NULL){
@@ -255,6 +253,8 @@ int start(){
 
 	/**Handle packets**/
 	pcap_loop(handle , 0 , packet_handler , NULL);
+
+
 
 return 0;
 }//End of start
@@ -292,9 +292,9 @@ return realloc(str , sizeof(char) * size);
 void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , const u_char *packet_body){
 	 
 	int data = 0 , _temp = 0;
-//	Configuration.session_total+= (data=packet_header->len);
-//	printf("Total : %llu\n" , Configuration.session_total);
-	
+	Configuration.session_total+= (data=packet_header->len);
+//	printf("Total : %llu\n: " , Configuration.session_total);
+
 	struct ether_header *eth;
 
 	eth = (struct ether_header*) packet_body;
@@ -302,29 +302,29 @@ void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , con
 	char  srcMac[18];
 
 	_ntoa(eth , destMac , srcMac);
-		
+	
+	
 	//Don't bother if the tracking list is empty just update the total
 	if(usr_size != 0){
-	printf("%s - %s\n", destMac , srcMac);
-	if((_temp = _usrLookupMAC(destMac))!= -1){
-				
-		user_list[_temp].Download+=data;
 
+	if((_temp = _usrLookupMAC(destMac))!= -1){
+		
+		user_list[_temp].Download+=data;
+//		printf("%s - %s : %llu %llu %d\n" , srcMac ,destMac , user_list[_temp].Download , user_list[_temp].Upload , data);
 	}	
 
 	if((_temp = _usrLookupMAC(srcMac))!= -1){
 
 		user_list[_temp].Upload+=data;
-
+//		printf("%s - %s : %llu %llu %d\n" , srcMac ,destMac , user_list[_temp].Download , user_list[_temp].Upload , data);
 	}
-		
 		if(user_list[_temp].BANNED == 0 && user_list[_temp].limit != 0 && user_list[_temp].limit < user_list[_temp].Upload + user_list[_temp].Download){
 			/**BAN HAMMER IS HERE**/
-		char* str = calloc(sizeof(char) , 256);
-		sprintf(str , "iptables -I INPUT -m mac --mac-source %s -j DROP" , user_list[_temp].MAC);
-		system(str);	
-		user_list[_temp].BANNED = 1;
-	}//End of if
+			char* str = calloc(sizeof(char) , 256);
+			sprintf(str , "iptables -I INPUT -m mac --mac-source %s -j DROP" , user_list[_temp].MAC);
+			system(str);	
+			user_list[_temp].BANNED = 1;
+		}//End of if
 
 	}//End of if
 	
@@ -332,13 +332,13 @@ void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , con
 	t = time(NULL);
 	struct tm now = *localtime(&t);
 	 
-	if((now.tm_sec - begin_time.tm_sec >= sec_diff)){
+	if((now.tm_hour - begin_time.tm_hour >= hour_diff) && (now.tm_min - begin_time.tm_min >= min_diff) && (now.tm_sec - begin_time.tm_sec >= sec_diff)){
 		
 		/**Routine here | Saving | Checking for bans | etc**/
+		printf("Session Total : %s \n" , convertReadable(Configuration.session_total));
 		_usrsave();
-		_usrlist();
-	//	webreport(0);
-		
+	//	_usrlist();
+		webreport();
 	begin_time = now;
 	}//End of routine
 
@@ -417,12 +417,12 @@ return -1;
 int _usrlist(){
 		
 	printf("#%d/%d/%d|%d:%d:%d\n", tm.tm_year + 1900, tm.tm_mon+1 ,tm.tm_mday , tm.tm_hour , tm.tm_min , tm.tm_sec);
-	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%llu Up:%llu Limit:%llu %s \n",i, 
+	for(int i = 0 ; i < usr_size ; i++)printf("[%d] : %s %s Down:%s Up:%s Limit:%s %s \n",i, 
 									      user_list[i].ALIAS,
 									      user_list[i].MAC,
-									      user_list[i].Download,
-									      user_list[i].Upload,
-									      user_list[i].limit,
+									      convertReadable(user_list[i].Download),
+									      convertReadable(user_list[i].Upload),
+									      convertReadable(user_list[i].limit),
 									      user_list[i].BANNED==1?"BANNED":"FINE");
 
 }//End of list
@@ -443,7 +443,7 @@ int _usrsave(){
 
 	fseek(f , 0 , SEEK_END);
 	unsigned long int f_size = ftell(f);
-	if(d_offset == -1)d_offset = f_size + 1;/**If we couldn't find the records of today**/
+	if(d_offset == -1)d_offset = f_size;	/**If we couldn't find the records of today**/
 	if(dayChange() == 1){
 
 		d_offset = f_size;  /**or we switch days in the middle of the operation we update our calendars!*/
@@ -493,8 +493,8 @@ int _reset(){
 		sprintf(str , "iptables -D INPUT -m mac --mac-source %s -j DROP" , user_list[i].MAC);
 		system(str);	
 		user_list[i].Download = 0;
-		user_list[i].Upload   = 0;
-		user_list[i].BANNED   = 0;
+		user_list[i].Upload = 0;
+		user_list[i].BANNED = 0;
 	}	
 	updateDate();
 	strcpy(Configuration.last_reset,curDate);
@@ -538,6 +538,12 @@ int readConfig(){
 			Configuration.file_dir = var;
 			printf("%s is set to '%s'\n" , flag ,Configuration.file_dir);
 
+		}else if(strcmp(flag , "ImgDir") == 0){
+			
+			Configuration.img_dir = calloc(sizeof(char) , strlen(var));
+			Configuration.img_dir = var;
+			printf("%s is set to '%s'\n" , flag , Configuration.img_dir);
+		
 		}else if(strcmp(flag , "Track") == 0){
 			
 			char *MAC  = calloc(sizeof(char) , 17 ),
@@ -567,8 +573,7 @@ int readConfig(){
 }//End of readConfig
 
 int _usrload(){
-	
-	
+
 	char data_found = 0;
 	FILE* f_report = fopen(Configuration.file_dir , "r+");
 	if(!f_report){
@@ -577,7 +582,6 @@ int _usrload(){
 		f_report = fopen(Configuration.file_dir , "w+");
 					
 	}else{
-		
 		/**Load todays data**/
       		char ch , *date_str  = calloc(sizeof(char) , 8);
 		fseek(f_report , 0 , SEEK_END);
@@ -604,14 +608,15 @@ int _usrload(){
 
 		i++;
 		if(i >= f_size)break;
-		}		
+		}
+		
 	}//End of if
 	
 	/**Update our Calendar**/
 	strcpy(Configuration.last_reset ,curDate);
 
 	if(data_found == 0){
-			
+		
 		d_offset = -1;
 		_reset();
 
@@ -646,6 +651,7 @@ char* convertReadable(unsigned long long int bytes){
 	char* result = calloc(sizeof(char) , 16);
 	unsigned long long int _temp = bytes;
 	int count;
+	
 	
 	for(count = 0; _temp > 1; ++count)_temp /=1024;
 	--count;
@@ -694,12 +700,10 @@ char* convertBytes(char* readable){
 return result;
 };
 
-int webreport(int command){
+int webreport(){
 	
-	if(command == 1){
-		readConfig();
-		_usrload();
-	}//End of if
+	if(!Configuration.file_dir)readConfig();
+	if(usr_size == 0)_usrload();
 
 	FILE* f = fopen(Configuration.web_dir , "w+");
 
@@ -714,11 +718,13 @@ int webreport(int command){
 	fprintf(f , "<body>\n<table>\n<tr>\n<th>ALIAS</th>\n<th>MAC</th>\n<th>Download</th>\n<th>Upload</th>\n<th>Limit</th>\n<th>Status</th>\n</tr>");
 	for(int i = 0 ; i < usr_size ; i++){
 		
-	fprintf(f , "\n<tr>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td></tr>" , user_list[i].ALIAS , user_list[i].MAC , user_list[i].Download==0?"0B":convertReadable(user_list[i].Download) , user_list[i].Upload==0?"0B":convertReadable(user_list[i].Upload) , user_list[i].limit==0?"No Limit!":convertReadable(user_list[i].limit) , user_list[i].BANNED==1?"BANNED":"FINE" );
+	fprintf(f , "\n<tr>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td>\n<td>%s</td></tr>" , user_list[i].ALIAS , user_list[i].MAC , user_list[i].Download==0?"0B":convertReadable(user_list[i].Download) , user_list[i].Upload==0?"0B":convertReadable(user_list[i].Upload) , user_list[i].limit==0?"No Limit!":convertReadable(user_list[i].limit) , user_list[i].BANNED==1?"BANNED":"FINE");
 
 
 	}//End of for
-	fprintf(f , "LastUpdated: %s-%d:%d:%d </table></body></html>" , curDate , tm.tm_hour , tm.tm_min , tm.tm_sec);
+
+	fprintf(f , "</table>\n</body>\n</html>");
+
 	fclose(f);
 
 return 0;
