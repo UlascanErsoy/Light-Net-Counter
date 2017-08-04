@@ -240,7 +240,7 @@ int start(){
 	/**START TRACKING**/
 
 	/**Open Device for live capturing**/
-
+	
 	struct pcap_pkthdr packet_header;
 	pcap_t *handle;
 	handle = pcap_open_live(Configuration.device_name , BUFSIZ , 1 , time_out , error_buf);
@@ -263,7 +263,7 @@ void updateDate(){
 	
 	t = time(NULL);
 	tm = *localtime(&t);
-	sprintf(curDate , "%d%d%d" , tm.tm_year+1900 , tm.tm_mon + 1 , tm.tm_mday);
+	sprintf(curDate , "%d%02d%02d" , tm.tm_year+1900 ,tm.tm_mon + 1 ,tm.tm_mday);
 	
 }//End of update Date
 
@@ -583,25 +583,25 @@ int _usrload(){
 					
 	}else{
 		/**Load todays data**/
-      		char ch , *date_str  = calloc(sizeof(char) , 8);
+      		char ch , *date_str  = calloc(sizeof(char) , 9);
 		fseek(f_report , 0 , SEEK_END);
 		int i = 0 , f_size = ftell(f_report);
 		fseek(f_report , 0 , SEEK_SET);
 		
+
+		updateDate();
 		while(EOF!=(ch=fgetc(f_report))){
 		
 			/**ASCII 35 -> "#"**/
 			if(ch==35){
 				
 				d_offset = ftell(f_report);
-				fgets(date_str , 8 , f_report);
+				fgets(date_str , 9 , f_report);
 
 			}//End of if
 
-			updateDate();
-			
 			if(isEqual(date_str , curDate)){
-						
+
 				data_found = 1;
 				break;
 			}
