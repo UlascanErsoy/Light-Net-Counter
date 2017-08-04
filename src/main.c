@@ -243,7 +243,7 @@ int start(){
 
 	struct pcap_pkthdr packet_header;
 	pcap_t *handle;
-	handle = pcap_open_live(Configuration.device_name , BUFSIZ , packet_lim , time_out , error_buf);
+	handle = pcap_open_live(Configuration.device_name , BUFSIZ , 1 , time_out , error_buf);
 	/**Check if the packet is Valid**/
 	if(handle == NULL){
 		
