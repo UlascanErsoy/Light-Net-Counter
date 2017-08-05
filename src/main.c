@@ -321,11 +321,11 @@ void packet_handler(u_char* args , const struct pcap_pkthdr *packet_header , con
 		if(user_list[_temp].BANNED == 0 && user_list[_temp].limit != 0 && user_list[_temp].limit < user_list[_temp].Upload + user_list[_temp].Download){
 			/**BAN HAMMER IS HERE**/
 			char* str = calloc(sizeof(char) , 256);
-			sprintf(str , "iptables -I INPUT -m mac --mac-source %s -j DROP" , user_list[_temp].MAC);
+			sprintf(str , "iptables -I INPUT -m mac --mac-source %s -j DROP && iptables save", user_list[_temp].MAC);
 			system(str);	
 			user_list[_temp].BANNED = 1;
 		}//End of if
-
+		
 	}//End of if
 	
 	/**Check for routing**/
@@ -496,6 +496,8 @@ int _reset(){
 		user_list[i].Upload = 0;
 		user_list[i].BANNED = 0;
 	}	
+
+	system("iptables save");
 	updateDate();
 	strcpy(Configuration.last_reset,curDate);
 return 0;
